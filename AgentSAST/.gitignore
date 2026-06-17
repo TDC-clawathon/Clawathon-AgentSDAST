@@ -1,0 +1,5 @@
+.env
+.codexhome/
+.plugin-cache/
+*.log
+bin/

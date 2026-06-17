@@ -1,0 +1,9 @@
+.git
+.DS_Store
+# Root-level docs only — do NOT use "*.md" (it must not strip the embedded
+# knowledge base in internal/knowledge/, which go:embed needs at build time).
+/README.md
+/ARCHITECTURE.md
+/test.md
+/test2.md
+/examples

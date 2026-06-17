@@ -1,0 +1,71 @@
+openapi: 3.0.0
+info:
+  title: Example Vulnerable API
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8099
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      summary: Search users
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: Get a user by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+  /fetch:
+    get:
+      operationId: fetchURL
+      summary: Fetch a remote URL (SSRF surface)
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /profile:
+    post:
+      operationId: updateProfile
+      summary: Update profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+      responses:
+        "200":
+          description: ok
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

@@ -1,0 +1,58 @@
+# Dependencies — installed fresh in image
+node_modules
+**/node_modules
+
+# Secrets — never copy into image
+.env
+.env.*
+!.env.example
+
+# Git & Docker metadata
+.git
+.gitignore
+.gitattributes
+.dockerignore
+Dockerfile*
+docker-compose*
+**/.git
+
+# Docs & dev-only files
+*.md
+README*
+LICENSE
+CHANGELOG*
+.editorconfig
+.eslintrc*
+.prettierrc*
+jest.config.*
+**/*.test.js
+**/*.spec.js
+**/*.test.ts
+**/*.spec.ts
+tests
+test
+__tests__
+coverage
+.nyc_output
+
+# Logs & OS junk
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+**/.DS_Store
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts & cache
+dist
+build
+.cache
+.turbo
+*.tsbuildinfo

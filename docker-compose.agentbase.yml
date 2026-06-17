@@ -1,0 +1,216 @@
+# AgentSDAST on GreenNode AgentBase — 6 Custom Agent Runtimes.
+# Local smoke test: docker compose -f docker-compose.agentbase.yml up --build
+# Production: push images to VCR and deploy each service as a separate Runtime.
+#
+# Service contract: https://docs.vngcloud.vn/vng-cloud-document/vn/ai-stack/agent-base/agent-runtime/khoi-tao-runtime
+
+x-build-runtime-mysql: &build-runtime-mysql
+  context: .
+  dockerfile: runtimes/mysql/Dockerfile
+
+x-build-runtime-minio: &build-runtime-minio
+  context: .
+  dockerfile: runtimes/minio/Dockerfile
+
+x-build-manager: &build-manager
+  context: .
+  dockerfile: Manager/Dockerfile
+
+x-build-agent-sast: &build-agent-sast
+  context: .
+  dockerfile: AgentSAST/Dockerfile
+
+x-build-agent-dast: &build-agent-dast
+  context: .
+  dockerfile: AgentDAST/Dockerfile
+
+x-build-agent-report: &build-agent-report
+  context: .
+  dockerfile: AgentReport/Dockerfile
+
+x-app-mysql: &app-mysql
+  MYSQL_HOST: ${MYSQL_HOST:-runtime-mysql}
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
+  MYSQL_USER: ${MYSQL_USER}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+x-app-minio: &app-minio
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+
+x-app-llm: &app-llm
+  LLM_API_BASE: ${LLM_API_BASE}
+  LLM_API_KEY: ${LLM_API_KEY}
+
+services:
+  # --- Data plane (AgentBase Runtimes 1–2) ---
+  runtime-mysql:
+    image: agentsdast-runtime-mysql:latest
+    build: *build-runtime-mysql
+    container_name: agentsdast-runtime-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-13306}:3306"
+      - "${MYSQL_HEALTH_PORT:-18080}:8080"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - agentsdast
+
+  runtime-minio:
+    image: agentsdast-runtime-minio:latest
+    build: *build-runtime-minio
+    container_name: agentsdast-runtime-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    ports:
+      - "${MINIO_PUBLISH_PORT:-19000}:9000"
+      - "${MINIO_HEALTH_PORT:-18081}:8080"
+    volumes:
+      - minio_data:/data
+    networks:
+      - agentsdast
+
+  # --- Compute plane (AgentBase Runtimes 3–6) — all listen on 8080 ---
+  manager:
+    image: agentsdast-manager:latest
+    build: *build-manager
+    container_name: agentsdast-manager-ab
+    restart: unless-stopped
+    ports:
+      - "${MANAGER_PORT:-8080}:8080"
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      MYSQL_HOST: runtime-mysql
+      MINIO_ENDPOINT: http://runtime-minio:9000
+      MINIO_PUBLIC_URL: http://localhost:${MINIO_PUBLISH_PORT:-19000}
+      MANAGER_PORT: "8080"
+      AGENT_SAST_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      AGENT_DAST_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      AGENT_REPORT_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      AVAILABLE_LLM_MODELS: ${AVAILABLE_LLM_MODELS:-}
+      AGENT_SAST_URL: http://agent-sast:8080/api/sast
+      AGENT_DAST_URL: http://agent-dast:8080/api/dast
+      AGENT_REPORT_URL: http://agent-report:8080/api/report
+      AGENT_REQUEST_TIMEOUT_MS: ${AGENT_REQUEST_TIMEOUT_MS:-30000}
+      AGENT_SYNC_INTERVAL_MS: ${AGENT_SYNC_INTERVAL_MS:-5000}
+      SKILLS_SYNC_ON_STARTUP: ${SKILLS_SYNC_ON_STARTUP:-1}
+      SKILLS_SYNC_OVERWRITE: ${SKILLS_SYNC_OVERWRITE:-0}
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+    networks:
+      - agentsdast
+
+  agent-sast:
+    image: agentsdast-agent-sast:latest
+    build: *build-agent-sast
+    container_name: agentsdast-agent-sast-ab
+    restart: unless-stopped
+    ports:
+      - "${AGENT_SAST_PORT:-8081}:8080"
+    environment:
+      <<: [*app-mysql, *app-minio]
+      MYSQL_HOST: runtime-mysql
+      SAST_PORT: "8080"
+      MINIO_ENDPOINT: runtime-minio:9000
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      CODEX_HOME: /root/.codex
+      LLM_BASE_URL: ${LLM_API_BASE}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      LLM_EFFORT: ${AGENT_SAST_LLM_EFFORT:-high}
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+    networks:
+      - agentsdast
+
+  agent-dast:
+    image: agentsdast-agent-dast:latest
+    build: *build-agent-dast
+    container_name: agentsdast-agent-dast-ab
+    restart: unless-stopped
+    ports:
+      - "${AGENT_DAST_PORT:-8082}:8080"
+    environment:
+      <<: [*app-mysql, *app-minio]
+      MYSQL_HOST: runtime-mysql
+      PORT: "8080"
+      MINIO_ENDPOINT: runtime-minio:9000
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      SKILLS_DAST_DIR: ${SKILLS_DAST_DIR:-/app/skills/dast}
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+      - skills-init
+    networks:
+      - agentsdast
+
+  agent-report:
+    image: agentsdast-agent-report:latest
+    build: *build-agent-report
+    container_name: agentsdast-agent-report-ab
+    restart: unless-stopped
+    ports:
+      - "${AGENT_REPORT_PORT:-8083}:8080"
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      MYSQL_HOST: runtime-mysql
+      PORT: "8080"
+      MINIO_ENDPOINT: http://runtime-minio:9000
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      SKILLS_REPORT_DIR: ${SKILLS_REPORT_DIR:-/app/skills/report}
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+      - skills-init
+    networks:
+      - agentsdast
+
+  skills-init:
+    image: alpine:3.20
+    container_name: agentsdast-skills-init-ab
+    volumes:
+      - ./skills:/src:ro
+      - skills_data:/dest
+    entrypoint: >
+      /bin/sh -c "
+      apk add --no-cache rsync >/dev/null;
+      rsync -a --delete /src/ /dest/;
+      echo 'skills synced to volume';
+      "
+    restart: "no"
+    networks:
+      - agentsdast
+
+volumes:
+  mysql_data:
+  minio_data:
+  skills_data:
+
+networks:
+  agentsdast:
+    driver: bridge

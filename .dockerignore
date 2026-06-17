@@ -1,0 +1,15 @@
+# Keep the root build context small. Does NOT exclude service source dirs
+# (Manager/, AgentSAST/, AgentDAST/, AgentReport/, skills/) so all
+# docker-compose builds still work.
+.git
+**/node_modules
+.docker-cache
+graphify-out
+.agentbase
+.claude
+.cursor
+.env
+.env.*
+*.log
+.DS_Store
+.agentbase/

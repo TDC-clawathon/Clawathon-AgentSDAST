@@ -1,0 +1,282 @@
+# Run scripts/init-docker-cache.sh once before the first build.
+# Build with: DOCKER_BUILDKIT=1 docker compose build
+# Env: copy .env.example → .env (variable names match ${...} below).
+
+x-build-manager: &build-manager
+  context: .
+  dockerfile: Manager/Dockerfile
+  cache_from:
+    - type=local,src=.docker-cache/manager
+  cache_to:
+    - type=local,dest=.docker-cache/manager,mode=max
+
+x-build-agent-sast: &build-agent-sast
+  context: .
+  dockerfile: AgentSAST/Dockerfile
+  cache_from:
+    - type=local,src=.docker-cache/agent-sast
+  cache_to:
+    - type=local,dest=.docker-cache/agent-sast,mode=max
+
+x-build-agent-dast: &build-agent-dast
+  context: .
+  dockerfile: AgentDAST/Dockerfile
+  cache_from:
+    - type=local,src=.docker-cache/agent-dast
+  cache_to:
+    - type=local,dest=.docker-cache/agent-dast,mode=max
+
+x-build-agent-report: &build-agent-report
+  context: .
+  dockerfile: AgentReport/Dockerfile
+  cache_from:
+    - type=local,src=.docker-cache/agent-report
+  cache_to:
+    - type=local,dest=.docker-cache/agent-report,mode=max
+
+x-build-demo-project: &build-demo-project
+  context: .
+  dockerfile: demo_project/Dockerfile
+  cache_from:
+    - type=local,src=.docker-cache/demo-project
+  cache_to:
+    - type=local,dest=.docker-cache/demo-project,mode=max
+
+x-app-mysql: &app-mysql
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
+  MYSQL_USER: ${MYSQL_USER}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+x-app-minio: &app-minio
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+
+x-app-llm: &app-llm
+  LLM_API_BASE: ${LLM_API_BASE}
+  LLM_API_KEY: ${LLM_API_KEY}
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: agentsdast-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - agentsdast
+
+  minio:
+    image: minio/minio:latest
+    container_name: agentsdast-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - agentsdast
+
+  manager:
+    image: agentsdast-manager:latest
+    build: *build-manager
+    container_name: agentsdast-manager
+    restart: unless-stopped
+    ports:
+      - "${MANAGER_PORT:-8000}:8000"
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      # AWS SDK expects a URL; minio-go agents use host:port (see agent-* services).
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_PUBLIC_URL: http://localhost:${MINIO_API_PORT:-9000}
+      MANAGER_PORT: "8000"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      AGENT_SAST_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      AGENT_DAST_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      AGENT_REPORT_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      AVAILABLE_LLM_MODELS: ${AVAILABLE_LLM_MODELS:-}
+      AGENT_SAST_URL: ${AGENT_SAST_URL:-http://agent-sast:8001/api/sast}
+      AGENT_DAST_URL: ${AGENT_DAST_URL:-http://agent-dast:8002/api/dast}
+      AGENT_REPORT_URL: ${AGENT_REPORT_URL:-http://agent-report:8003/api/report}
+      AGENT_REQUEST_TIMEOUT_MS: ${AGENT_REQUEST_TIMEOUT_MS:-30000}
+      AGENT_SYNC_INTERVAL_MS: ${AGENT_SYNC_INTERVAL_MS:-5000}
+      SKILLS_SYNC_ON_STARTUP: ${SKILLS_SYNC_ON_STARTUP:-1}
+      SKILLS_SYNC_OVERWRITE: ${SKILLS_SYNC_OVERWRITE:-0}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - agentsdast
+
+  agent-sast:
+    image: agentsdast-agent-sast:latest
+    build: *build-agent-sast
+    container_name: agentsdast-agent-sast
+    restart: unless-stopped
+    ports:
+      - "${AGENT_SAST_PORT:-8001}:${AGENT_SAST_PORT:-8001}"
+    environment:
+      <<: [*app-mysql, *app-minio]
+      SAST_PORT: ${AGENT_SAST_PORT:-8001}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      LLM_BASE_URL: ${LLM_API_BASE}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      SKILLS_SAST_DIR: ${SKILLS_SAST_DIR:-/app/skills/sast}
+      SKILLS_SHARED_DIR: /app/skills/shared
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      manager:
+        condition: service_started
+      skills-init:
+        condition: service_completed_successfully
+    networks:
+      - agentsdast
+
+  agent-dast:
+    image: agentsdast-agent-dast:latest
+    build: *build-agent-dast
+    container_name: agentsdast-agent-dast
+    restart: unless-stopped
+    ports:
+      - "${AGENT_DAST_PORT:-8002}:${AGENT_DAST_PORT:-8002}"
+    environment:
+      <<: [*app-mysql, *app-minio]
+      PORT: ${AGENT_DAST_PORT:-8002}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      SKILLS_DAST_DIR: ${SKILLS_DAST_DIR:-/app/skills/dast}
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      manager:
+        condition: service_started
+      skills-init:
+        condition: service_completed_successfully
+    networks:
+      - agentsdast
+
+  agent-report:
+    image: agentsdast-agent-report:latest
+    build: *build-agent-report
+    container_name: agentsdast-agent-report
+    restart: unless-stopped
+    ports:
+      - "${AGENT_REPORT_PORT:-8003}:${AGENT_REPORT_PORT:-8003}"
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      PORT: ${AGENT_REPORT_PORT:-8003}
+      MINIO_ENDPOINT: http://minio:9000
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      SKILLS_REPORT_DIR: ${SKILLS_REPORT_DIR:-/app/skills/report}
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      manager:
+        condition: service_started
+      skills-init:
+        condition: service_completed_successfully
+    networks:
+      - agentsdast
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: agentsdast-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      mc mb local/${MINIO_BUCKET} --ignore-existing;
+      exit 0;
+      "
+    networks:
+      - agentsdast
+
+  skills-init:
+    image: alpine:3.20
+    container_name: agentsdast-skills-init
+    volumes:
+      - ./skills:/src:ro
+      - skills_data:/dest
+    entrypoint: >
+      /bin/sh -c "
+      apk add --no-cache rsync >/dev/null;
+      rsync -a --delete /src/ /dest/;
+      echo 'skills synced to volume';
+      "
+    restart: "no"
+    networks:
+      - agentsdast
+
+  # http://localhost:8005/api/v1/orders (in-network: http://demo-project:8080/api/v1/orders)
+  demo-project:
+    image: agentsdast-demo-project:latest
+    build: *build-demo-project
+    container_name: agentsdast-demo-project
+    restart: unless-stopped
+    ports:
+      - "${DEMO_PROJECT_PORT:-8005}:8080"
+    networks:
+      - agentsdast
+
+volumes:
+  mysql_data:
+  minio_data:
+  skills_data:
+
+networks:
+  agentsdast:
+    driver: bridge

@@ -1,0 +1,211 @@
+# AgentSDAST on a single VNG vServer (Ubuntu + Docker).
+# Images from VCR — no local build. Run: deploy/full-deploy.sh
+#
+# Required in .env on the server:
+#   VCR_REGISTRY=vcr.vngcloud.vn/111480-abp111935
+#   IMAGE_TAG=v1
+#   MYSQL_*, MINIO_*, LLM_*, AGENT_* (same as local .env)
+
+x-app-mysql: &app-mysql
+  MYSQL_HOST: runtime-mysql
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: ${MYSQL_DATABASE}
+  MYSQL_USER: ${MYSQL_USER}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+x-app-minio: &app-minio
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+
+x-app-llm: &app-llm
+  LLM_API_BASE: ${LLM_API_BASE}
+  LLM_API_KEY: ${LLM_API_KEY}
+
+services:
+  runtime-mysql:
+    image: ${VCR_REGISTRY}/runtime-mysql:${IMAGE_TAG:-v1}
+    container_name: agentsdast-runtime-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - agentsdast
+
+  runtime-minio:
+    image: ${VCR_REGISTRY}/runtime-minio:${IMAGE_TAG:-v1}
+    container_name: agentsdast-runtime-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_PUBLIC_URL:-https://clawathon.cloud}/minio/console/
+    volumes:
+      - minio_data:/data
+    networks:
+      - agentsdast
+
+  skills-init:
+    image: alpine:3.20
+    container_name: agentsdast-skills-init
+    volumes:
+      - ./skills:/src:ro
+      - skills_data:/dest
+    entrypoint: >
+      /bin/sh -c "
+      apk add --no-cache rsync >/dev/null;
+      rsync -a --delete /src/ /dest/;
+      echo 'skills synced';
+      "
+    restart: "no"
+    networks:
+      - agentsdast
+
+  manager:
+    image: ${VCR_REGISTRY}/manager:${IMAGE_TAG:-v1}
+    container_name: agentsdast-manager
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      MINIO_ENDPOINT: http://runtime-minio:9000
+      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://127.0.0.1}
+      MANAGER_PORT: "8080"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      AGENT_SAST_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      AGENT_DAST_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      AGENT_REPORT_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      AVAILABLE_LLM_MODELS: ${AVAILABLE_LLM_MODELS:-}
+      AGENT_SAST_URL: http://agent-sast:8080/api/sast
+      AGENT_DAST_URL: http://agent-dast:8080/api/dast
+      AGENT_REPORT_URL: http://agent-report:8080/api/report
+      AGENT_REQUEST_TIMEOUT_MS: ${AGENT_REQUEST_TIMEOUT_MS:-30000}
+      AGENT_SYNC_INTERVAL_MS: ${AGENT_SYNC_INTERVAL_MS:-5000}
+      SKILLS_SYNC_ON_STARTUP: ${SKILLS_SYNC_ON_STARTUP:-1}
+      SKILLS_SYNC_OVERWRITE: ${SKILLS_SYNC_OVERWRITE:-0}
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+    networks:
+      - agentsdast
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: agentsdast-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-80}:80"
+      - "${GATEWAY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      - ./nginx/private-key.pem:/etc/nginx/ssl/private-key.pem:ro
+    depends_on:
+      - manager
+      - runtime-minio
+    networks:
+      - agentsdast
+
+  agent-sast:
+    image: ${VCR_REGISTRY}/agent-sast:${IMAGE_TAG:-v1}
+    container_name: agentsdast-agent-sast
+    restart: unless-stopped
+    environment:
+      <<: [*app-mysql, *app-minio]
+      SAST_PORT: "8080"
+      MINIO_ENDPOINT: runtime-minio:9000
+      MINIO_USE_SSL: "false"
+      LLM_BASE_URL: ${LLM_API_BASE}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${AGENT_SAST_MODEL:-gpt-4o}
+      SKILLS_SAST_DIR: /app/skills/sast
+      SKILLS_SHARED_DIR: /app/skills/shared
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+      - skills-init
+    networks:
+      - agentsdast
+
+  agent-dast:
+    image: ${VCR_REGISTRY}/agent-dast:${IMAGE_TAG:-v1}
+    container_name: agentsdast-agent-dast
+    restart: unless-stopped
+    environment:
+      <<: [*app-mysql, *app-minio]
+      PORT: "8080"
+      MINIO_ENDPOINT: runtime-minio:9000
+      MINIO_USE_SSL: "false"
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_DAST_MODEL:-gpt-4o-mini}
+      SKILLS_DAST_DIR: /app/skills/dast
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+      - skills-init
+    networks:
+      - agentsdast
+
+  agent-report:
+    image: ${VCR_REGISTRY}/agent-report:${IMAGE_TAG:-v1}
+    container_name: agentsdast-agent-report
+    restart: unless-stopped
+    environment:
+      <<: [*app-mysql, *app-minio, *app-llm]
+      PORT: "8080"
+      MINIO_ENDPOINT: http://runtime-minio:9000
+      OPENAI_BASE_URL: ${LLM_API_BASE}
+      OPENAI_API_KEY: ${LLM_API_KEY}
+      OPENAI_MODEL: ${AGENT_REPORT_MODEL:-gpt-4o}
+      SKILLS_REPORT_DIR: /app/skills/report
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    volumes:
+      - skills_data:/app/skills:ro
+    depends_on:
+      - runtime-mysql
+      - runtime-minio
+      - manager
+      - skills-init
+    networks:
+      - agentsdast
+
+volumes:
+  mysql_data:
+  minio_data:
+  skills_data:
+
+networks:
+  agentsdast:
+    driver: bridge

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentSDAST Manager</title>
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/css/styles.css?v=6.3" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" />
+  <script>
+    // Apply saved theme before first paint to avoid a flash. Default: light.
+    (function () {
+      try {
+        var t = localStorage.getItem("agentsdast.theme") || "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a href="#/dashboard" class="brand" title="AgentSDAST Home">
+        <img src="/assets/logo.svg" alt="" class="brand-logo" width="40" height="40" />
+        <div class="brand-text">
+          <span class="brand-title">AgentSDAST</span>
+          <span class="brand-sub">Security Scan Platform</span>
+        </div>
+      </a>
+      <nav>
+        <a href="#/dashboard" class="nav-link" data-page="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </a>
+        <a href="#/scan" class="nav-link" data-page="scan">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+          Scan
+        </a>
+        <a href="#/models" class="nav-link" data-page="models" data-admin>
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3V6a4 4 0 0 1 4-4z"/><path d="M9 14h6M9 18h4"/></svg>
+          Models
+        </a>
+        <a href="#/skills" class="nav-link" data-page="skills" data-admin>
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+          Skills
+        </a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <p>Overview of scans and agent health.</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">Total Scans</div>
+            <div class="value" id="stat-total">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">New</div>
+            <div class="value" id="stat-new">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Progress</div>
+            <div class="value" id="stat-progress">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Done</div>
+            <div class="value" id="stat-done">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Fail</div>
+            <div class="value" id="stat-fail">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Cancel</div>
+            <div class="value" id="stat-cancel">—</div>
+          </div>
+        </div>
+
+        <div class="stats-grid health-grid">
+          <div class="stat-card health-card">
+            <div class="label">SAST Health</div>
+            <div class="health-row">
+              <span class="health-dot" id="sast-health-dot"></span>
+              <span class="health-label" id="sast-health-label">—</span>
+            </div>
+            <div class="health-meta" id="sast-health-meta">—</div>
+            <div class="health-model">Model: <span id="sast-model-name">—</span></div>
+          </div>
+          <div class="stat-card health-card">
+            <div class="label">DAST Health</div>
+            <div class="health-row">
+              <span class="health-dot" id="dast-health-dot"></span>
+              <span class="health-label" id="dast-health-label">—</span>
+            </div>
+            <div class="health-meta" id="dast-health-meta">—</div>
+            <div class="health-model">Model: <span id="dast-model-name">—</span></div>
+          </div>
+          <div class="stat-card health-card">
+            <div class="label">Report Health</div>
+            <div class="health-row">
+              <span class="health-dot" id="report-health-dot"></span>
+              <span class="health-label" id="report-health-label">—</span>
+            </div>
+            <div class="health-meta" id="report-health-meta">—</div>
+            <div class="health-model">Model: <span id="report-model-name">—</span></div>
+          </div>
+          <div class="stat-card health-card">
+            <div class="label">MySQL</div>
+            <div class="health-row">
+              <span class="health-dot" id="mysql-health-dot"></span>
+              <span class="health-label" id="mysql-health-label">—</span>
+            </div>
+            <div class="health-meta" id="mysql-health-meta">—</div>
+          </div>
+          <div class="stat-card health-card">
+            <div class="label">MinIO</div>
+            <div class="health-row">
+              <span class="health-dot" id="minio-health-dot"></span>
+              <span class="health-label" id="minio-health-label">—</span>
+            </div>
+            <div class="health-meta" id="minio-health-meta">—</div>
+          </div>
+          <div class="stat-card health-card">
+            <div class="label">LLM API</div>
+            <div class="health-row">
+              <span class="health-dot" id="llm-health-dot"></span>
+              <span class="health-label" id="llm-health-label">—</span>
+            </div>
+            <div class="health-meta" id="llm-health-meta">—</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Status Breakdown</h2>
+          <table>
+            <thead>
+              <tr><th>Status</th><th>Count</th></tr>
+            </thead>
+            <tbody id="status-breakdown">
+              <tr><td colspan="2" class="empty">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2>Recent Scans</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>API URL</th>
+                <th>Agents</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="recent-scans">
+              <tr><td colspan="5" class="empty">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Scan -->
+      <section id="view-scan" class="view">
+        <div class="page-header">
+          <h1>Scan</h1>
+          <p>Create a new scan record and manage scan history.</p>
+        </div>
+
+        <div class="panel" id="new-scan-panel">
+          <div class="panel-head">
+            <h2>New Scan</h2>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-collapse-scan" hidden>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+              Minimize
+            </button>
+          </div>
+
+          <!-- Collapsed default state: just an Init Scan button -->
+          <div id="new-scan-collapsed">
+            <button class="btn btn-primary" id="btn-init-scan">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+              <span id="btn-init-scan-label">Init Scan</span>
+            </button>
+            <span class="new-scan-hint">Creates the scan record and opens the form.</span>
+          </div>
+
+          <!-- Expanded form (revealed after Init Scan) -->
+          <div id="new-scan-form" hidden>
+          <div class="field">
+            <div class="dropzone-text" id="scan-id-label">
+              // awaiting init_scan() — generate UUID to enable uploads
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Source Code (.zip)</label>
+            <div class="dropzone disabled" id="dropzone-source" data-type="source">
+              <div class="dropzone-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div class="dropzone-title">Upload source code</div>
+              <div class="dropzone-text">Drag & drop or click — .zip only · max 200 MB</div>
+              <div class="dropzone-filename" id="source-filename"></div>
+              <input type="file" accept=".zip" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Swagger Spec</label>
+            <div class="dropzone disabled" id="dropzone-swagger" data-type="swagger">
+              <div class="dropzone-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+              </div>
+              <div class="dropzone-title">Upload OpenAPI spec</div>
+              <div class="dropzone-text">.json, .yaml or .yml · max 200 MB</div>
+              <div class="dropzone-filename" id="swagger-filename"></div>
+              <input type="file" accept=".json,.yaml,.yml" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="api-url">API Base Path URL</label>
+            <div class="api-url-row">
+              <input
+                type="url"
+                id="api-url"
+                class="url-input"
+                placeholder="https://api.example.com/v1"
+              />
+              <button type="button" class="btn btn-ghost" id="btn-check-api-url">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Check Connect
+              </button>
+            </div>
+            <label class="remember-row" for="api-url-remember">
+              <input type="checkbox" id="api-url-remember" />
+              Remember API URL
+            </label>
+          </div>
+
+          <div class="field">
+            <label>Scan Mode</label>
+            <div class="scan-modes" id="scan-modes">
+              <label class="mode-toggle"><input type="radio" name="scan-mode" id="mode-quickscan" value="quickscan" checked /> <span class="mode-name">Quick Scan</span><span class="mode-hint">lightweight, fast feedback</span></label>
+              <label class="mode-toggle"><input type="radio" name="scan-mode" id="mode-deepscan" value="deepscan" /> <span class="mode-name">Deep Scan</span><span class="mode-hint">comprehensive (includes Quick Scan)</span></label>
+              <label class="mode-toggle mode-option"><input type="checkbox" id="mode-pgwscan" /> <span class="mode-name">PGW Scan</span><span class="mode-hint">payment-gateway checks (add-on)</span></label>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" id="btn-create" disabled>
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/></svg>
+            Create Scan Record
+          </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Scan History</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>API URL</th>
+                <th>SAST Progress</th>
+                <th>DAST Progress</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr><td colspan="7" class="empty">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Models -->
+      <section id="view-models" class="view">
+        <div class="page-header">
+          <h1>Models</h1>
+          <p>Connect to LLM server, browse models, and assign one model per agent.</p>
+        </div>
+
+        <div class="panel">
+          <h2>1. Check Connection</h2>
+          <p class="panel-desc">Verify Manager can reach the model server at <code>LLM_API_BASE</code>.</p>
+          <div class="health-meta" id="models-llm-base">—</div>
+          <div class="health-meta" id="models-llm-connect-result">—</div>
+          <button class="btn btn-primary" id="btn-check-llm" type="button">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Check LLM Connection
+          </button>
+        </div>
+
+        <div class="panel">
+          <h2>2. Configure Model per Agent</h2>
+          <p class="panel-desc">Pick which model each agent uses when running scans.</p>
+          <div class="assign-grid">
+            <div class="field">
+              <label for="assign-sast">AgentSAST Model</label>
+              <select id="assign-sast" class="url-input"></select>
+              <button class="btn btn-primary btn-save-agent-model" data-agent="sast" type="button">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                Save SAST Model
+              </button>
+            </div>
+            <div class="field">
+              <label for="assign-dast">AgentDAST Model</label>
+              <select id="assign-dast" class="url-input"></select>
+              <button class="btn btn-primary btn-save-agent-model" data-agent="dast" type="button">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                Save DAST Model
+              </button>
+            </div>
+            <div class="field">
+              <label for="assign-report">AgentReport Model</label>
+              <select id="assign-report" class="url-input"></select>
+              <button class="btn btn-primary btn-save-agent-model" data-agent="report" type="button">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                Save Report Model
+              </button>
+            </div>
+          </div>
+          <div class="health-meta" id="models-agent-config-summary">—</div>
+        </div>
+
+        <div class="panel" id="panel-available-models">
+          <h2>3. Available Models <span class="llm-status" id="models-llm-status"></span></h2>
+          <div class="models-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Provider</th>
+                  <th>Assigned To</th>
+                  <th>Available for Use</th>
+                </tr>
+              </thead>
+              <tbody id="models-list">
+                <tr><td colspan="4" class="empty">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Skills -->
+      <section id="view-skills" class="view">
+        <div class="page-header">
+          <h1>Skills</h1>
+          <p>View and edit agent skill files in MinIO (<code>skills/sast</code>, <code>skills/dast</code>, <code>skills/report</code>).</p>
+        </div>
+
+        <div class="panel skills-toolbar">
+          <div class="skills-agent-tabs">
+            <button type="button" class="btn skills-agent-tab active" data-agent="sast">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              SAST
+            </button>
+            <button type="button" class="btn skills-agent-tab" data-agent="dast">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              DAST
+            </button>
+            <button type="button" class="btn skills-agent-tab" data-agent="report">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Report
+            </button>
+          </div>
+          <div class="skills-toolbar-actions">
+            <span class="health-meta" id="skills-prefix-label">—</span>
+            <button type="button" class="btn btn-ghost" id="btn-skill-refresh">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-skill-new">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              New File
+            </button>
+          </div>
+        </div>
+
+        <div class="skills-layout">
+          <div class="panel skills-list-panel">
+            <h2>Files</h2>
+            <ul class="skills-file-list" id="skills-file-list">
+              <li class="empty">Loading...</li>
+            </ul>
+          </div>
+
+          <div class="panel skills-editor-panel">
+            <div class="skills-editor-header">
+              <code id="skills-current-path" class="skills-path-label">Select a file</code>
+              <div class="skills-editor-tabs">
+                <button type="button" class="btn btn-ghost skills-tab-btn active" data-tab="edit">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                  Edit
+                </button>
+                <button type="button" class="btn btn-ghost skills-tab-btn" data-tab="preview">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Preview
+                </button>
+              </div>
+              <div class="skills-editor-actions">
+                <button type="button" class="btn btn-primary" id="btn-skill-save" disabled>
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  Save
+                </button>
+                <button type="button" class="btn btn-danger" id="btn-skill-delete" disabled>
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  Delete
+                </button>
+              </div>
+            </div>
+            <div id="skills-editor-pane" class="skills-editor-pane">
+              <div id="skills-editor-wrap" class="skills-cm-wrap"></div>
+            </div>
+            <div id="skills-preview" class="skills-preview hidden"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Compact light/dark switch — fixed top-right, does not affect layout -->
+  <button type="button" id="theme-toggle" class="theme-toggle" role="switch" title="Toggle light / dark mode" aria-label="Toggle light / dark mode">
+    <span class="theme-toggle-track">
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <span class="theme-toggle-knob"></span>
+    </span>
+  </button>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <div class="modal-overlay" id="report-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Report</h3>
+        <div class="modal-actions modal-review-actions">
+          <span class="modal-review-label">Review</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="modal-download-raw">Raw report (HTML)</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="modal-download-pdf">PDF report</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="modal-rerun-report">Regenerate report</button>
+        </div>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body-wrap">
+        <iframe id="modal-iframe" class="modal-iframe hidden" title="Report preview"></iframe>
+        <pre id="modal-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/markdown/markdown.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/js/ui.js?v=6.3"></script>
+  <script src="/js/skills-editor.js?v=6.3"></script>
+  <script src="/js/app.js?v=6.3"></script>
+</body>
+</html>

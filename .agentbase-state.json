@@ -1,0 +1,23 @@
+{
+  "wizard_step": 8,
+  "project_name": "agentsdast",
+  "framework": "multi-runtime (6 custom agents)",
+  "network_mode": "PUBLIC",
+  "network_mode_target": "VPC",
+  "vpc_id": "net-152aea47-19fa-4dff-bb5f-a8ab7de640c5",
+  "subnet_id": "sub-afa6c3cb-4d10-4487-af28-e248d3f876cb",
+  "vpc_dns_status": "ENABLING",
+  "flavor": "runtime-s2-general-2x4",
+  "registry": "vcr.vngcloud.vn/111480-abp111935",
+  "image_tag": "v1",
+  "cr_repo_name": "111480-abp111935",
+  "runtimes": {
+    "runtime-mysql": "runtime-757f1784-fe92-40af-a2e6-c7a69286f313",
+    "runtime-minio": "runtime-dd8514d4-e35f-4833-a544-2663a738c6a9",
+    "agent-sast": "runtime-848dc80c-ce3b-429e-b9d0-a32f0c19c9ea",
+    "agent-dast": "runtime-7eaad1f7-d4a9-4070-b6dd-8dd1a79203a6",
+    "agent-report": "runtime-5e7c8f5e-0adc-436c-8a54-497731c3ec43",
+    "manager": "runtime-d78607fa-1c99-4840-b3c1-ad9a6647d7f1"
+  },
+  "blocker": "VPC vDNS still ENABLING — redeploy to VPC blocked until ENABLED"
+}
